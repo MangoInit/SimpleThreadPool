@@ -1,11 +1,6 @@
-//
-// Created by Mango Huang on 2022/3/10.
-//
-
-#include <future>
 #include "ThreadPool.h"
 
-inline ThreadPool::ThreadPool(int threads) : stop(false)
+ThreadPool::ThreadPool(int threads) : stop(false)
 {
     for (size_t i = 0; i < threads; ++i)
         workers.emplace_back([this] {
@@ -27,26 +22,7 @@ inline ThreadPool::ThreadPool(int threads) : stop(false)
         });
 }
 
-template<class F, class... Args>
-auto ThreadPool::enqueue(F &&f, Args &&...args)
-{
-    using return_type = std::invoke_result_t<F, Args...>;
-    auto task = std::make_shared<std::packaged_task<return_type()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...));
-    std::future<return_type> res = task->get_future();
-    {
-        std::unique_lock<std::mutex> lock(queue_mutex);
-
-        if (stop)
-            throw std::runtime_error("enqueue on stopped ThreadPool");
-
-        tasks.emplace([task = std::move(task)] { (*task)(); });
-    }
-    condition.notify_one();
-    return res;
-}
-
-inline ThreadPool::~ThreadPool()
+ThreadPool::~ThreadPool()
 {
     {
         std::unique_lock<std::mutex> lock(queue_mutex);
