@@ -10,6 +10,10 @@ class ThreadPool {
    public:
     explicit ThreadPool(int threads = std::thread::hardware_concurrency());
     ~ThreadPool();
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
 
     template <class F, class... Args>
     std::future<std::invoke_result<F, Args...>> enqueue(F &&f, Args &&...args)
@@ -33,6 +37,27 @@ class ThreadPool {
         }
         condition.notify_one();
         return res;
+    }
+
+    template <class F, class... Args>
+    auto Add(F&& f, Args&... args) -> std::future< decltype(f(args...))>
+    {
+        std::function<decltype(f(args...))()> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+
+        auto task_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(func);
+
+        std::function<void()> wrapper_func = [task_ptr]() { (*task_ptr)(); };
+
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+
+            if (stop)
+                throw std::runtime_error("enqueue on stopped ThreadPool");
+
+            tasks.emplace(wrapper_func);
+        }
+        condition.notify_one();
+        return task_ptr->get_future();
     }
 
    private:
